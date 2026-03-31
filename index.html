@@ -667,9 +667,29 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
   .btn:active { transform: scale(0.95); }
+  .btn-music { background: linear-gradient(135deg, #ff6b6b, #ee5a24); color: white; font-size: 18px; padding: 12px 28px; animation: musicPulse 1.5s ease-in-out infinite; }
+  .btn-music.playing { animation: none; background: linear-gradient(135deg, #666, #444); }
+  @keyframes musicPulse { 0%,100% { transform: scale(1); box-shadow: 0 4px 12px rgba(255,100,100,0.4); } 50% { transform: scale(1.05); box-shadow: 0 6px 20px rgba(255,100,100,0.6); } }
   .btn-glasses { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
   .btn-hat { background: linear-gradient(135deg, #f093fb, #f5576c); color: white; }
   .btn-speed { background: linear-gradient(135deg, #4facfe, #00f2fe); color: white; }
+
+  /* Lyrics karaoke */
+  .lyrics {
+    margin-top: 15px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #d63384;
+    text-align: center;
+    min-height: 36px;
+    padding: 0 20px;
+    transition: all 0.2s;
+  }
+  .lyrics.highlight {
+    color: #ff1744;
+    transform: scale(1.1);
+    text-shadow: 0 0 10px rgba(255,23,68,0.4);
+  }
 
   /* Hearts */
   .heart-burst {
@@ -821,7 +841,10 @@
 
 <div class="title">Ben sevimli bir domuzum ve kocam&#x131; &#x00E7;ok seviyorum &#x1F496;</div>
 
+<div class="lyrics" id="lyrics"></div>
+
 <div class="controls">
+  <button class="btn btn-music" id="musicBtn" onclick="toggleMusic()">&#127925; Sarki Baslat!</button>
   <button class="btn btn-glasses" onclick="toggleGlasses()">&#128526; Gozluk</button>
   <button class="btn btn-hat" onclick="toggleHat()">&#127913; Sapka</button>
   <button class="btn btn-speed" id="speedBtn" onclick="changeSpeed()">&#9889; Hizlan!</button>
@@ -854,11 +877,208 @@
     speed = (speed + 1) % speeds.length;
     const d = 5 / speeds[speed];
     document.getElementById('pig').style.animationDuration = d + 's';
-    document.querySelectorAll('.arm, .mouth, .cheek, .tail, .butt, .slap-text, .slap-star, .ripple, .handprint, .eye').forEach(el => {
+    document.querySelectorAll('.arm, .mouth, .cheek, .tail, .butt, .slap-star, .ripple, .handprint, .eye').forEach(el => {
       el.style.animationDuration = d + 's';
     });
     document.querySelector('.stage').style.animationDuration = d + 's';
     document.getElementById('speedBtn').textContent = labels[speed];
+  }
+
+  // ===== MUSIC ENGINE =====
+  let audioCtx = null;
+  let musicPlaying = false;
+  let musicTimeout = null;
+
+  // Note frequencies
+  const N = {
+    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
+    C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
+    R: 0 // rest
+  };
+
+  function playNote(freq, startTime, duration, type, vol) {
+    if (freq === 0) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'triangle';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(vol || 0.15, startTime + 0.03);
+    gain.gain.setValueAtTime(vol || 0.15, startTime + duration - 0.05);
+    gain.gain.linearRampToValueAtTime(0, startTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+  }
+
+  function playBass(freq, startTime, duration) {
+    if (freq === 0) return;
+    playNote(freq / 2, startTime, duration, 'sine', 0.12);
+  }
+
+  // Melody: "Ben bir domuzum domuzum domuzum, kocami cok severim severim severim"
+  // Upbeat, catchy, polka-style
+  function getSong() {
+    const bpm = 140;
+    const beat = 60 / bpm;
+    const melody = [
+      // "Ben bir do-mu-zum" (bar 1)
+      { n: N.G4, d: 0.5 },  // Ben
+      { n: N.G4, d: 0.5 },  // bir
+      { n: N.E4, d: 0.5 },  // do
+      { n: N.G4, d: 0.5 },  // mu
+      { n: N.A4, d: 1.0 },  // zum
+      // "do-mu-zum" (bar 2)
+      { n: N.A4, d: 0.5 },  // do
+      { n: N.G4, d: 0.5 },  // mu
+      { n: N.A4, d: 1.0 },  // zum
+      // "do-mu-zum" (bar 3)
+      { n: N.B4, d: 0.5 },  // do
+      { n: N.A4, d: 0.5 },  // mu
+      { n: N.G4, d: 1.5 },  // zum
+      { n: N.R,  d: 0.5 },  // rest
+      // "Ko-ca-mi cok" (bar 4)
+      { n: N.C5, d: 0.5 },  // Ko
+      { n: N.B4, d: 0.5 },  // ca
+      { n: N.A4, d: 0.5 },  // mi
+      { n: N.G4, d: 0.5 },  // cok
+      // "se-ve-rim" (bar 5)
+      { n: N.A4, d: 0.5 },  // se
+      { n: N.B4, d: 0.5 },  // ve
+      { n: N.C5, d: 1.0 },  // rim
+      // "se-ve-rim" (bar 6)
+      { n: N.B4, d: 0.5 },  // se
+      { n: N.A4, d: 0.5 },  // ve
+      { n: N.G4, d: 1.0 },  // rim
+      // "se-ve-rim!" (bar 7)
+      { n: N.A4, d: 0.5 },  // se
+      { n: N.G4, d: 0.5 },  // ve
+      { n: N.E4, d: 1.5 },  // rim!
+      { n: N.R,  d: 1.0 },  // rest before repeat
+
+      // --- TEKRAR (oktav yukari, enerjik) ---
+      // "Ben bir do-mu-zum"
+      { n: N.G4, d: 0.5 },
+      { n: N.A4, d: 0.5 },
+      { n: N.E4, d: 0.5 },
+      { n: N.G4, d: 0.5 },
+      { n: N.C5, d: 1.0 },
+      // "do-mu-zum"
+      { n: N.C5, d: 0.5 },
+      { n: N.B4, d: 0.5 },
+      { n: N.C5, d: 1.0 },
+      // "do-mu-zum"
+      { n: N.D5, d: 0.5 },
+      { n: N.C5, d: 0.5 },
+      { n: N.B4, d: 1.5 },
+      { n: N.R,  d: 0.5 },
+      // "Ko-ca-mi cok"
+      { n: N.E5, d: 0.5 },
+      { n: N.D5, d: 0.5 },
+      { n: N.C5, d: 0.5 },
+      { n: N.B4, d: 0.5 },
+      // "se-ve-rim"
+      { n: N.C5, d: 0.5 },
+      { n: N.D5, d: 0.5 },
+      { n: N.E5, d: 1.0 },
+      // "se-ve-rim"
+      { n: N.D5, d: 0.5 },
+      { n: N.C5, d: 0.5 },
+      { n: N.B4, d: 1.0 },
+      // "se-ve-rim!"
+      { n: N.C5, d: 0.5 },
+      { n: N.B4, d: 0.5 },
+      { n: N.G4, d: 2.0 },
+      { n: N.R,  d: 1.0 },
+    ];
+
+    // Lyrics sync
+    const lyrics = [
+      "Ben bir", "domuzum", "", "", "domuzum", "", "", "domuzum", "", "", "", "",
+      "Kocam\u0131", "\u00E7ok", "", "",
+      "severim", "", "", "severim", "", "", "severim!", "", "", "",
+      // tekrar
+      "Ben bir", "domuzum!", "", "", "domuzum!", "", "", "domuzum!", "", "", "", "",
+      "Kocam\u0131", "\u00E7ok", "", "",
+      "severim!", "", "", "severim!", "", "", "severim!!!", "", "", "",
+    ];
+
+    return { melody, lyrics, beat };
+  }
+
+  function playMelody() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    const { melody, lyrics, beat } = getSong();
+    const now = audioCtx.currentTime + 0.1;
+    let t = 0;
+    const lyricsEl = document.getElementById('lyrics');
+    let totalDuration = 0;
+
+    // Oom-pah bass pattern
+    const totalBeats = melody.reduce((s, n) => s + n.d, 0);
+    for (let b = 0; b < totalBeats; b += 1) {
+      const barPos = b % 4;
+      if (barPos === 0) {
+        playBass(N.C4, now + b * beat, beat * 0.9);
+      } else if (barPos === 2) {
+        playBass(N.G4, now + b * beat, beat * 0.9);
+      }
+      // Hi-hat tick
+      playNote(800 + Math.random() * 400, now + b * beat, 0.05, 'square', 0.02);
+      if (barPos === 1 || barPos === 3) {
+        playNote(600, now + b * beat, 0.08, 'square', 0.03);
+      }
+    }
+
+    // Play melody notes + sync lyrics
+    melody.forEach((note, i) => {
+      const startTime = now + t * beat;
+      const dur = note.d * beat;
+      playNote(note.n, startTime, dur, 'triangle', 0.18);
+      // Harmony
+      if (note.n > 0) {
+        playNote(note.n * 1.5, startTime, dur, 'sine', 0.04);
+      }
+
+      // Lyrics
+      if (lyrics[i]) {
+        const delay = t * beat * 1000;
+        setTimeout(() => {
+          if (!musicPlaying) return;
+          lyricsEl.textContent = lyrics[i];
+          lyricsEl.classList.add('highlight');
+          setTimeout(() => lyricsEl.classList.remove('highlight'), 200);
+        }, delay);
+      }
+
+      t += note.d;
+    });
+
+    totalDuration = t * beat * 1000;
+
+    // Loop
+    musicTimeout = setTimeout(() => {
+      if (musicPlaying) playMelody();
+    }, totalDuration);
+  }
+
+  function toggleMusic() {
+    const btn = document.getElementById('musicBtn');
+    if (!musicPlaying) {
+      musicPlaying = true;
+      btn.innerHTML = '\u23F9 Durdur';
+      btn.classList.add('playing');
+      playMelody();
+    } else {
+      musicPlaying = false;
+      btn.innerHTML = '\u{1F3B5} Sarki Baslat!';
+      btn.classList.remove('playing');
+      clearTimeout(musicTimeout);
+      document.getElementById('lyrics').textContent = '';
+      if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    }
   }
 </script>
 
