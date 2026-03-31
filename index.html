@@ -1011,14 +1011,57 @@
     return { melody, lyrics, beat };
   }
 
+  // Speak a word with Turkish voice
+  function singWord(text, delay, rate, pitch) {
+    setTimeout(() => {
+      if (!musicPlaying) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'tr-TR';
+      utter.rate = rate || 1.2;
+      utter.pitch = pitch || 1.3;
+      utter.volume = 1;
+      // Try to find Turkish voice
+      const voices = speechSynthesis.getVoices();
+      const trVoice = voices.find(v => v.lang.startsWith('tr'));
+      if (trVoice) utter.voice = trVoice;
+      speechSynthesis.speak(utter);
+    }, delay);
+  }
+
   function playMelody() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Load voices
+    speechSynthesis.getVoices();
 
     const { melody, lyrics, beat } = getSong();
     const now = audioCtx.currentTime + 0.1;
     let t = 0;
     const lyricsEl = document.getElementById('lyrics');
     let totalDuration = 0;
+
+    // Singing words with timing
+    const singLines = [
+      { text: "Ben bir domuzum", time: 0, rate: 1.3, pitch: 1.4 },
+      { text: "domuzum", time: 3, rate: 1.3, pitch: 1.5 },
+      { text: "domuzum", time: 5, rate: 1.2, pitch: 1.3 },
+      { text: "Kocamı çok", time: 7.5, rate: 1.3, pitch: 1.5 },
+      { text: "severim", time: 9, rate: 1.3, pitch: 1.4 },
+      { text: "severim", time: 10.5, rate: 1.3, pitch: 1.3 },
+      { text: "severim!", time: 12, rate: 1.1, pitch: 1.2 },
+      // tekrar
+      { text: "Ben bir domuzum!", time: 15.5, rate: 1.4, pitch: 1.6 },
+      { text: "domuzum!", time: 18.5, rate: 1.4, pitch: 1.7 },
+      { text: "domuzum!", time: 20.5, rate: 1.3, pitch: 1.5 },
+      { text: "Kocamı çok", time: 23, rate: 1.4, pitch: 1.7 },
+      { text: "severim!", time: 24.5, rate: 1.4, pitch: 1.6 },
+      { text: "severim!", time: 26, rate: 1.4, pitch: 1.5 },
+      { text: "severiiim!", time: 27.5, rate: 1.0, pitch: 1.4 },
+    ];
+
+    // Speak lyrics
+    singLines.forEach(line => {
+      singWord(line.text, line.time * 1000, line.rate, line.pitch);
+    });
 
     // Oom-pah bass pattern
     const totalBeats = melody.reduce((s, n) => s + n.d, 0);
@@ -1029,24 +1072,21 @@
       } else if (barPos === 2) {
         playBass(N.G4, now + b * beat, beat * 0.9);
       }
-      // Hi-hat tick
       playNote(800 + Math.random() * 400, now + b * beat, 0.05, 'square', 0.02);
       if (barPos === 1 || barPos === 3) {
         playNote(600, now + b * beat, 0.08, 'square', 0.03);
       }
     }
 
-    // Play melody notes + sync lyrics
+    // Play melody notes + show lyrics on screen
     melody.forEach((note, i) => {
       const startTime = now + t * beat;
       const dur = note.d * beat;
-      playNote(note.n, startTime, dur, 'triangle', 0.18);
-      // Harmony
+      playNote(note.n, startTime, dur, 'triangle', 0.15);
       if (note.n > 0) {
-        playNote(note.n * 1.5, startTime, dur, 'sine', 0.04);
+        playNote(note.n * 1.5, startTime, dur, 'sine', 0.03);
       }
 
-      // Lyrics
       if (lyrics[i]) {
         const delay = t * beat * 1000;
         setTimeout(() => {
@@ -1062,7 +1102,6 @@
 
     totalDuration = t * beat * 1000;
 
-    // Loop
     musicTimeout = setTimeout(() => {
       if (musicPlaying) playMelody();
     }, totalDuration);
@@ -1080,6 +1119,7 @@
       btn.innerHTML = '\u{1F3B5} Sarki Baslat!';
       btn.classList.remove('playing');
       clearTimeout(musicTimeout);
+      speechSynthesis.cancel();
       document.getElementById('lyrics').textContent = '';
       if (audioCtx) { audioCtx.close(); audioCtx = null; }
     }
