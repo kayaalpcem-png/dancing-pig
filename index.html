@@ -892,219 +892,282 @@
   let audioCtx = null;
   let musicPlaying = false;
   let musicTimeout = null;
+  let allTimeouts = [];
 
-  // Note frequencies
-  const N = {
-    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
-    C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
-    R: 0 // rest
+  const F = {
+    C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392, A4:440, B4:493.88,
+    C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99,
+    R:0
   };
 
-  function playNote(freq, startTime, duration, type, vol) {
-    if (freq === 0) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type || 'triangle';
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(vol || 0.15, startTime + 0.03);
-    gain.gain.setValueAtTime(vol || 0.15, startTime + duration - 0.05);
-    gain.gain.linearRampToValueAtTime(0, startTime + duration);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(startTime);
-    osc.stop(startTime + duration);
+  // Glockenspiel / music box sound
+  function playBell(freq, time, dur, vol) {
+    if (!freq) return;
+    const v = vol || 0.12;
+    const o1 = audioCtx.createOscillator();
+    const o2 = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o1.type = 'sine';
+    o1.frequency.value = freq;
+    o2.type = 'sine';
+    o2.frequency.value = freq * 3; // harmonic
+    const g2 = audioCtx.createGain();
+    g2.gain.value = 0.15; // soft harmonic
+    o1.connect(g);
+    o2.connect(g2);
+    g2.connect(g);
+    g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(v, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    o1.start(time);
+    o1.stop(time + dur);
+    o2.start(time);
+    o2.stop(time + dur);
   }
 
-  function playBass(freq, startTime, duration) {
-    if (freq === 0) return;
-    playNote(freq / 2, startTime, duration, 'sine', 0.12);
+  // Soft flute/vocal melody
+  function playFlute(freq, time, dur, vol) {
+    if (!freq) return;
+    const v = vol || 0.1;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    // Vibrato for warmth
+    const vib = audioCtx.createOscillator();
+    const vibG = audioCtx.createGain();
+    vib.frequency.value = 5.5;
+    vibG.gain.value = 3;
+    vib.connect(vibG);
+    vibG.connect(o.frequency);
+    o.type = 'sine';
+    o.frequency.value = freq;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    // Soft attack, sustained, soft release
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(v, time + 0.08);
+    g.gain.setValueAtTime(v, time + dur * 0.7);
+    g.gain.linearRampToValueAtTime(0, time + dur);
+    o.start(time);
+    o.stop(time + dur + 0.01);
+    vib.start(time);
+    vib.stop(time + dur + 0.01);
   }
 
-  // Melody: "Ben bir domuzum domuzum domuzum, kocami cok severim severim severim"
-  // Upbeat, catchy, polka-style
-  function getSong() {
-    const bpm = 140;
-    const beat = 60 / bpm;
-    const melody = [
-      // "Ben bir do-mu-zum" (bar 1)
-      { n: N.G4, d: 0.5 },  // Ben
-      { n: N.G4, d: 0.5 },  // bir
-      { n: N.E4, d: 0.5 },  // do
-      { n: N.G4, d: 0.5 },  // mu
-      { n: N.A4, d: 1.0 },  // zum
-      // "do-mu-zum" (bar 2)
-      { n: N.A4, d: 0.5 },  // do
-      { n: N.G4, d: 0.5 },  // mu
-      { n: N.A4, d: 1.0 },  // zum
-      // "do-mu-zum" (bar 3)
-      { n: N.B4, d: 0.5 },  // do
-      { n: N.A4, d: 0.5 },  // mu
-      { n: N.G4, d: 1.5 },  // zum
-      { n: N.R,  d: 0.5 },  // rest
-      // "Ko-ca-mi cok" (bar 4)
-      { n: N.C5, d: 0.5 },  // Ko
-      { n: N.B4, d: 0.5 },  // ca
-      { n: N.A4, d: 0.5 },  // mi
-      { n: N.G4, d: 0.5 },  // cok
-      // "se-ve-rim" (bar 5)
-      { n: N.A4, d: 0.5 },  // se
-      { n: N.B4, d: 0.5 },  // ve
-      { n: N.C5, d: 1.0 },  // rim
-      // "se-ve-rim" (bar 6)
-      { n: N.B4, d: 0.5 },  // se
-      { n: N.A4, d: 0.5 },  // ve
-      { n: N.G4, d: 1.0 },  // rim
-      // "se-ve-rim!" (bar 7)
-      { n: N.A4, d: 0.5 },  // se
-      { n: N.G4, d: 0.5 },  // ve
-      { n: N.E4, d: 1.5 },  // rim!
-      { n: N.R,  d: 1.0 },  // rest before repeat
-
-      // --- TEKRAR (oktav yukari, enerjik) ---
-      // "Ben bir do-mu-zum"
-      { n: N.G4, d: 0.5 },
-      { n: N.A4, d: 0.5 },
-      { n: N.E4, d: 0.5 },
-      { n: N.G4, d: 0.5 },
-      { n: N.C5, d: 1.0 },
-      // "do-mu-zum"
-      { n: N.C5, d: 0.5 },
-      { n: N.B4, d: 0.5 },
-      { n: N.C5, d: 1.0 },
-      // "do-mu-zum"
-      { n: N.D5, d: 0.5 },
-      { n: N.C5, d: 0.5 },
-      { n: N.B4, d: 1.5 },
-      { n: N.R,  d: 0.5 },
-      // "Ko-ca-mi cok"
-      { n: N.E5, d: 0.5 },
-      { n: N.D5, d: 0.5 },
-      { n: N.C5, d: 0.5 },
-      { n: N.B4, d: 0.5 },
-      // "se-ve-rim"
-      { n: N.C5, d: 0.5 },
-      { n: N.D5, d: 0.5 },
-      { n: N.E5, d: 1.0 },
-      // "se-ve-rim"
-      { n: N.D5, d: 0.5 },
-      { n: N.C5, d: 0.5 },
-      { n: N.B4, d: 1.0 },
-      // "se-ve-rim!"
-      { n: N.C5, d: 0.5 },
-      { n: N.B4, d: 0.5 },
-      { n: N.G4, d: 2.0 },
-      { n: N.R,  d: 1.0 },
-    ];
-
-    // Lyrics sync
-    const lyrics = [
-      "Ben bir", "domuzum", "", "", "domuzum", "", "", "domuzum", "", "", "", "",
-      "Kocam\u0131", "\u00E7ok", "", "",
-      "severim", "", "", "severim", "", "", "severim!", "", "", "",
-      // tekrar
-      "Ben bir", "domuzum!", "", "", "domuzum!", "", "", "domuzum!", "", "", "", "",
-      "Kocam\u0131", "\u00E7ok", "", "",
-      "severim!", "", "", "severim!", "", "", "severim!!!", "", "", "",
-    ];
-
-    return { melody, lyrics, beat };
+  // Warm pad chord
+  function playPad(freqs, time, dur) {
+    freqs.forEach(f => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0, time);
+      g.gain.linearRampToValueAtTime(0.03, time + 0.3);
+      g.gain.setValueAtTime(0.03, time + dur - 0.3);
+      g.gain.linearRampToValueAtTime(0, time + dur);
+      o.start(time);
+      o.stop(time + dur + 0.01);
+    });
   }
 
-  // Speak a word with Turkish voice
-  function singWord(text, delay, rate, pitch) {
-    setTimeout(() => {
+  // Soft kick
+  function playKick(time) {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, time);
+    o.frequency.exponentialRampToValueAtTime(40, time + 0.15);
+    g.gain.setValueAtTime(0.15, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start(time);
+    o.stop(time + 0.2);
+  }
+
+  // Soft shaker
+  function playShaker(time) {
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.04, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.3;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const g = audioCtx.createGain();
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'highpass';
+    filt.frequency.value = 7000;
+    g.gain.setValueAtTime(0.06, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+    src.connect(filt);
+    filt.connect(g);
+    g.connect(audioCtx.destination);
+    src.start(time);
+  }
+
+  // Sing with Turkish voice
+  function singPhrase(text, delay, pitch, rate) {
+    const tid = setTimeout(() => {
       if (!musicPlaying) return;
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'tr-TR';
-      utter.rate = rate || 1.2;
-      utter.pitch = pitch || 1.3;
-      utter.volume = 1;
-      // Try to find Turkish voice
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'tr-TR';
+      u.pitch = pitch || 1.5;
+      u.rate = rate || 0.9;
+      u.volume = 1;
       const voices = speechSynthesis.getVoices();
-      const trVoice = voices.find(v => v.lang.startsWith('tr'));
-      if (trVoice) utter.voice = trVoice;
-      speechSynthesis.speak(utter);
+      const fem = voices.find(v => v.lang.startsWith('tr') && v.name.toLowerCase().includes('yelda'))
+              || voices.find(v => v.lang.startsWith('tr'))
+              || voices.find(v => v.lang.startsWith('tr'));
+      if (fem) u.voice = fem;
+      speechSynthesis.speak(u);
     }, delay);
+    allTimeouts.push(tid);
   }
 
   function playMelody() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Load voices
     speechSynthesis.getVoices();
 
-    const { melody, lyrics, beat } = getSong();
-    const now = audioCtx.currentTime + 0.1;
-    let t = 0;
+    const bpm = 108;
+    const beat = 60 / bpm;
+    const now = audioCtx.currentTime + 0.15;
     const lyricsEl = document.getElementById('lyrics');
-    let totalDuration = 0;
 
-    // Singing words with timing
-    const singLines = [
-      { text: "Ben bir domuzum", time: 0, rate: 1.3, pitch: 1.4 },
-      { text: "domuzum", time: 3, rate: 1.3, pitch: 1.5 },
-      { text: "domuzum", time: 5, rate: 1.2, pitch: 1.3 },
-      { text: "Kocamı çok", time: 7.5, rate: 1.3, pitch: 1.5 },
-      { text: "severim", time: 9, rate: 1.3, pitch: 1.4 },
-      { text: "severim", time: 10.5, rate: 1.3, pitch: 1.3 },
-      { text: "severim!", time: 12, rate: 1.1, pitch: 1.2 },
-      // tekrar
-      { text: "Ben bir domuzum!", time: 15.5, rate: 1.4, pitch: 1.6 },
-      { text: "domuzum!", time: 18.5, rate: 1.4, pitch: 1.7 },
-      { text: "domuzum!", time: 20.5, rate: 1.3, pitch: 1.5 },
-      { text: "Kocamı çok", time: 23, rate: 1.4, pitch: 1.7 },
-      { text: "severim!", time: 24.5, rate: 1.4, pitch: 1.6 },
-      { text: "severim!", time: 26, rate: 1.4, pitch: 1.5 },
-      { text: "severiiim!", time: 27.5, rate: 1.0, pitch: 1.4 },
+    // === MELODY (music box + flute) ===
+    // "Ben bir domuzum, domuzum, domuzum"
+    const mel = [
+      // Bar 1-2: "Ben bir do-mu-zum"
+      [F.E4, 0, 1], [F.E4, 1, 1], [F.G4, 2, 1], [F.A4, 3, 1], [F.G4, 4, 2],
+      // Bar 3: "do-mu-zum"
+      [F.A4, 6, 1], [F.G4, 7, 1], [F.A4, 8, 2],
+      // Bar 4: "do-mu-zum"
+      [F.B4, 10, 1], [F.A4, 11, 1], [F.G4, 12, 3],
+      // rest
+      [F.R, 15, 1],
+      // Bar 5-6: "Ko-ca-mı çok"
+      [F.C5, 16, 1], [F.B4, 17, 1], [F.A4, 18, 1], [F.G4, 19, 1],
+      // Bar 7: "se-ve-rim"
+      [F.A4, 20, 1], [F.B4, 21, 1], [F.C5, 22, 2],
+      // Bar 8: "se-ve-rim"
+      [F.B4, 24, 1], [F.A4, 25, 1], [F.G4, 26, 2],
+      // Bar 9: "se-ve-rim!"
+      [F.A4, 28, 1], [F.G4, 29, 1], [F.E4, 30, 3],
+      // rest
+      [F.R, 33, 1],
+
+      // === TEKRAR - daha enerjik ===
+      [F.E4, 34, 1], [F.G4, 35, 1], [F.A4, 36, 1], [F.B4, 37, 1], [F.C5, 38, 2],
+      [F.C5, 40, 1], [F.B4, 41, 1], [F.C5, 42, 2],
+      [F.D5, 44, 1], [F.C5, 45, 1], [F.B4, 46, 3],
+      [F.R, 49, 1],
+      [F.E5, 50, 1], [F.D5, 51, 1], [F.C5, 52, 1], [F.B4, 53, 1],
+      [F.C5, 54, 1], [F.D5, 55, 1], [F.E5, 56, 2],
+      [F.D5, 58, 1], [F.C5, 59, 1], [F.B4, 60, 2],
+      [F.C5, 62, 1], [F.B4, 63, 1], [F.G4, 64, 4],
     ];
 
-    // Speak lyrics
-    singLines.forEach(line => {
-      singWord(line.text, line.time * 1000, line.rate, line.pitch);
+    const totalBeats = 70;
+
+    // Play melody (bell + flute together)
+    mel.forEach(([freq, start, dur]) => {
+      if (freq === 0) return;
+      playBell(freq, now + start * beat, dur * beat, 0.1);
+      playFlute(freq, now + start * beat, dur * beat * 0.95, 0.08);
     });
 
-    // Oom-pah bass pattern
-    const totalBeats = melody.reduce((s, n) => s + n.d, 0);
-    for (let b = 0; b < totalBeats; b += 1) {
-      const barPos = b % 4;
-      if (barPos === 0) {
-        playBass(N.C4, now + b * beat, beat * 0.9);
-      } else if (barPos === 2) {
-        playBass(N.G4, now + b * beat, beat * 0.9);
-      }
-      playNote(800 + Math.random() * 400, now + b * beat, 0.05, 'square', 0.02);
-      if (barPos === 1 || barPos === 3) {
-        playNote(600, now + b * beat, 0.08, 'square', 0.03);
-      }
+    // Chords (warm pads)
+    const chords = [
+      [[F.C4, F.E4, F.G4], 0, 6],
+      [[F.F4, F.A4, F.C5], 6, 4],
+      [[F.G4, F.B4, F.D5], 10, 4],
+      [[F.C4, F.E4, F.G4], 14, 2],
+      [[F.C4, F.E4, F.G4], 16, 4],
+      [[F.F4, F.A4, F.C5], 20, 4],
+      [[F.G4, F.B4, F.D5], 24, 4],
+      [[F.C4, F.E4, F.G4], 28, 5],
+      // tekrar
+      [[F.C4, F.E4, F.G4], 34, 6],
+      [[F.F4, F.A4, F.C5], 40, 4],
+      [[F.G4, F.B4, F.D5], 44, 5],
+      [[F.C4, F.E4, F.G4], 50, 4],
+      [[F.F4, F.A4, F.C5], 54, 4],
+      [[F.G4, F.B4, F.D5], 58, 4],
+      [[F.C4, F.E4, F.G4], 62, 6],
+    ];
+    chords.forEach(([notes, start, dur]) => {
+      playPad(notes, now + start * beat, dur * beat);
+    });
+
+    // Rhythm
+    for (let b = 0; b < totalBeats; b++) {
+      if (b % 2 === 0) playKick(now + b * beat);
+      if (b % 2 === 1) playShaker(now + b * beat);
+      if (b % 1 === 0) playShaker(now + (b + 0.5) * beat);
     }
 
-    // Play melody notes + show lyrics on screen
-    melody.forEach((note, i) => {
-      const startTime = now + t * beat;
-      const dur = note.d * beat;
-      playNote(note.n, startTime, dur, 'triangle', 0.15);
-      if (note.n > 0) {
-        playNote(note.n * 1.5, startTime, dur, 'sine', 0.03);
-      }
+    // === SINGING (speech) ===
+    const phrases = [
+      { t: "Ben bir domuzum", beat: 0, pitch: 1.5, rate: 0.85 },
+      { t: "domuzum", beat: 6, pitch: 1.6, rate: 0.9 },
+      { t: "domuzum", beat: 10, pitch: 1.4, rate: 0.85 },
+      { t: "Kocamı çok", beat: 16, pitch: 1.6, rate: 0.9 },
+      { t: "severim", beat: 20, pitch: 1.5, rate: 0.9 },
+      { t: "severim", beat: 24, pitch: 1.4, rate: 0.9 },
+      { t: "severim!", beat: 28, pitch: 1.3, rate: 0.8 },
+      // tekrar
+      { t: "Ben bir domuzum!", beat: 34, pitch: 1.7, rate: 0.9 },
+      { t: "domuzum!", beat: 40, pitch: 1.8, rate: 0.95 },
+      { t: "domuzum!", beat: 44, pitch: 1.6, rate: 0.85 },
+      { t: "Kocamı çok", beat: 50, pitch: 1.8, rate: 0.95 },
+      { t: "severim!", beat: 54, pitch: 1.7, rate: 0.95 },
+      { t: "severim!", beat: 58, pitch: 1.6, rate: 0.9 },
+      { t: "severiiiim!", beat: 62, pitch: 1.5, rate: 0.7 },
+    ];
 
-      if (lyrics[i]) {
-        const delay = t * beat * 1000;
-        setTimeout(() => {
-          if (!musicPlaying) return;
-          lyricsEl.textContent = lyrics[i];
-          lyricsEl.classList.add('highlight');
-          setTimeout(() => lyricsEl.classList.remove('highlight'), 200);
-        }, delay);
-      }
-
-      t += note.d;
+    phrases.forEach(p => {
+      singPhrase(p.t, p.beat * beat * 1000, p.pitch, p.rate);
     });
 
-    totalDuration = t * beat * 1000;
+    // === LYRICS on screen ===
+    const screenLyrics = [
+      { t: "Ben bir domuzum", beat: 0 },
+      { t: "domuzum", beat: 6 },
+      { t: "domuzum", beat: 10 },
+      { t: "", beat: 14 },
+      { t: "Kocam\u0131 \u00E7ok", beat: 16 },
+      { t: "severim", beat: 20 },
+      { t: "severim", beat: 24 },
+      { t: "severim!", beat: 28 },
+      { t: "", beat: 32 },
+      { t: "Ben bir domuzum!", beat: 34 },
+      { t: "domuzum!", beat: 40 },
+      { t: "domuzum!", beat: 44 },
+      { t: "", beat: 48 },
+      { t: "Kocam\u0131 \u00E7ok", beat: 50 },
+      { t: "severim!", beat: 54 },
+      { t: "severim!", beat: 58 },
+      { t: "severiiiim! \u2764\uFE0F", beat: 62 },
+      { t: "", beat: 67 },
+    ];
 
+    screenLyrics.forEach(l => {
+      const tid = setTimeout(() => {
+        if (!musicPlaying) return;
+        lyricsEl.textContent = l.t;
+        if (l.t) {
+          lyricsEl.classList.add('highlight');
+          setTimeout(() => lyricsEl.classList.remove('highlight'), 300);
+        }
+      }, l.beat * beat * 1000);
+      allTimeouts.push(tid);
+    });
+
+    // Loop
     musicTimeout = setTimeout(() => {
       if (musicPlaying) playMelody();
-    }, totalDuration);
+    }, totalBeats * beat * 1000);
+    allTimeouts.push(musicTimeout);
   }
 
   function toggleMusic() {
@@ -1118,7 +1181,8 @@
       musicPlaying = false;
       btn.innerHTML = '\u{1F3B5} Sarki Baslat!';
       btn.classList.remove('playing');
-      clearTimeout(musicTimeout);
+      allTimeouts.forEach(t => clearTimeout(t));
+      allTimeouts = [];
       speechSynthesis.cancel();
       document.getElementById('lyrics').textContent = '';
       if (audioCtx) { audioCtx.close(); audioCtx = null; }
